@@ -1,5 +1,5 @@
 {
-  "name": "@h8ntome/stow",
+  "name": "stow-files",
   "version": "1.0.0",
   "description": "A smart local file organiser — sort files into folders using rules you define.",
   "type": "module",

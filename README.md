@@ -27,7 +27,7 @@ Runs as a CLI with an optional browser-based UI. No cloud, no account, no tracki
 ## Installation
 
 ```bash
-npm install -g @h8ntome/stow
+npm install -g stow-files
 ```
 
 ---
