@@ -7,6 +7,7 @@ import { Router } from 'express';
 import path from 'path';
 import fs from 'fs';
 import { loadConfig, saveConfig } from '../../core/config.js';
+import { saveLast } from '../../core/last.js';
 import { scanFolder } from '../../core/scanner.js';
 import { evaluate } from '../../core/rules-engine.js';
 import { moveFile, previewMove } from '../../core/mover.js';
@@ -108,6 +109,14 @@ router.post('/apply', async (req, res) => {
     if (req.body.sourcePath) config.lastSource = path.resolve(req.body.sourcePath);
     config.lastDestination = path.resolve(req.body.destinationBase);
     await saveConfig(config);
+
+    // Save last-run record for `stow.`
+    await saveLast({
+      sourcePath:      config.lastSource || '',
+      destinationPath: config.lastDestination,
+      rules:           config.rules || [],
+      filesMoved:      moved.length,
+    });
 
     res.json({ moved, failed, total: matched.length });
   } catch (err) {

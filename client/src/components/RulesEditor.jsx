@@ -1,7 +1,6 @@
 /**
  * RulesEditor.jsx
  * Rule list with drag-to-reorder, enable/disable, edit, delete.
- * Includes 5 targeted presets.
  */
 
 import { useState } from 'react';
@@ -14,106 +13,39 @@ import {
   useSortable, verticalListSortingStrategy,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { GripVertical, Pencil, Trash2, Plus, ToggleLeft, ToggleRight, ChevronDown } from 'lucide-react';
+import { GripVertical, Pencil, Trash2, Plus, ToggleLeft, ToggleRight } from 'lucide-react';
 import { RuleForm } from './RuleForm.jsx';
 
-// ─── Preset definitions ───────────────────────────────────────────────────
+// ─── Smart Cleanup rule set (exported for use in App.jsx) ─────────────────
 
-const PRESETS = [
-  {
-    id: 'downloads',
-    name: 'Downloads Cleanup',
-    description: 'Sorts by type: Screenshots, Images, Videos, Documents, Archives, Code',
-    buildRules: () => [
-      { name: 'Screenshots', type: 'category', condition: { category: 'screenshots' }, destination: 'Screenshots' },
-      { name: 'Images',      type: 'category', condition: { category: 'images' },      destination: 'Images' },
-      { name: 'Videos',      type: 'category', condition: { category: 'videos' },      destination: 'Videos' },
-      { name: 'Documents',   type: 'category', condition: { category: 'documents' },   destination: 'Documents' },
-      { name: 'Archives',    type: 'category', condition: { category: 'archives' },    destination: 'Archives' },
-      { name: 'Code',        type: 'category', condition: { category: 'code' },        destination: 'Code' },
-    ],
-  },
-  {
-    id: 'screenshots',
-    name: 'Screenshots',
-    description: "Finds files with 'screenshot', 'screen shot', 'capture', or 'snip' in the name",
-    buildRules: () => [
-      { name: 'screenshot',  type: 'keyword', condition: { keyword: 'screenshot',  caseSensitive: false }, destination: 'Screenshots' },
-      { name: 'screen shot', type: 'keyword', condition: { keyword: 'screen shot', caseSensitive: false }, destination: 'Screenshots' },
-      { name: 'capture',     type: 'keyword', condition: { keyword: 'capture',     caseSensitive: false }, destination: 'Screenshots' },
-      { name: 'snip',        type: 'keyword', condition: { keyword: 'snip',        caseSensitive: false }, destination: 'Screenshots' },
-    ],
-  },
-  {
-    id: 'by-month',
-    name: 'Sort by Month',
-    description: 'Groups all files into month subfolders — 2024-03, 2025-01, etc.',
-    buildRules: () => [
-      { name: 'By Month', type: 'dateGroup', condition: { groupBy: 'month' }, destination: '' },
-    ],
-  },
-  {
-    id: 'dev-files',
-    name: 'Dev Files',
-    description: 'Code files → Code, archives → Archives, log files → Logs',
-    buildRules: () => [
-      {
-        name: 'Code',
-        type: 'extension',
-        condition: { extensions: ['.js','.ts','.jsx','.tsx','.py','.rb','.go','.rs','.java','.c','.cpp','.h','.cs','.sh','.json','.yaml','.yml','.toml','.md','.env'] },
-        destination: 'Code',
-      },
-      {
-        name: 'Archives',
-        type: 'extension',
-        condition: { extensions: ['.zip','.tar','.gz','.bz2','.7z','.rar','.tgz','.xz'] },
-        destination: 'Archives',
-      },
-      {
-        name: 'Logs',
-        type: 'extension',
-        condition: { extensions: ['.log'] },
-        destination: 'Logs',
-      },
-    ],
-  },
-  {
-    id: 'design-assets',
-    name: 'Design Assets',
-    description: '.fig/.psd/.ai/.svg → Design, images → Images, video → Video',
-    buildRules: () => [
-      {
-        name: 'Design files',
-        type: 'extension',
-        condition: { extensions: ['.fig','.sketch','.ai','.psd','.svg','.xd'] },
-        destination: 'Design',
-      },
-      {
-        name: 'Images',
-        type: 'extension',
-        condition: { extensions: ['.png','.jpg','.jpeg','.webp','.gif','.tiff','.heic'] },
-        destination: 'Images',
-      },
-      {
-        name: 'Video',
-        type: 'extension',
-        condition: { extensions: ['.mp4','.mov','.avi','.mkv','.webm'] },
-        destination: 'Video',
-      },
-    ],
-  },
+export const SMART_CLEANUP_RULES = [
+  // Screenshots: keyword-based, first-match-wins before image category
+  { name: 'screenshot keyword',  type: 'keyword', condition: { keyword: 'screenshot',  caseSensitive: false }, destination: 'Screenshots' },
+  { name: 'screen shot keyword', type: 'keyword', condition: { keyword: 'screen shot', caseSensitive: false }, destination: 'Screenshots' },
+  { name: 'capture keyword',     type: 'keyword', condition: { keyword: 'capture',     caseSensitive: false }, destination: 'Screenshots' },
+  { name: 'snip keyword',        type: 'keyword', condition: { keyword: 'snip',        caseSensitive: false }, destination: 'Screenshots' },
+  { name: 'grab keyword',        type: 'keyword', condition: { keyword: 'grab',        caseSensitive: false }, destination: 'Screenshots' },
+  // File type categories
+  { name: 'Images',    type: 'category',  condition: { category: 'images' },    destination: 'Images' },
+  { name: 'Videos',    type: 'category',  condition: { category: 'videos' },    destination: 'Videos' },
+  { name: 'Audio',     type: 'category',  condition: { category: 'audio' },     destination: 'Audio' },
+  { name: 'Documents', type: 'category',  condition: { category: 'documents' }, destination: 'Documents' },
+  { name: 'Code',      type: 'category',  condition: { category: 'code' },      destination: 'Code' },
+  { name: 'Archives',  type: 'category',  condition: { category: 'archives' },  destination: 'Archives' },
+  // Design files (no backend category; use extension type)
+  { name: 'Design',    type: 'extension', condition: { extensions: ['.fig', '.sketch', '.ai', '.psd', '.xd'] }, destination: 'Design' },
 ];
 
-// ─── Type label colours (accent blue only, no purple) ─────────────────────
+// ─── Type label colours ───────────────────────────────────────────────────
 
 const TYPE_STYLE = {
-  category:  { bg: 'var(--accent-bg)', color: 'var(--accent)' },
-  extension: { bg: 'var(--bg-input)',  color: 'var(--text-muted)' },
-  keyword:   { bg: 'var(--bg-input)',  color: 'var(--text-muted)' },
-  size:      { bg: 'var(--bg-input)',  color: 'var(--text-muted)' },
-  regex:     { bg: 'var(--bg-input)',  color: 'var(--text-muted)' },
-  dateGroup: { bg: 'var(--accent-bg)', color: 'var(--accent)' },
-  dateRange: { bg: 'var(--bg-input)',  color: 'var(--text-muted)' },
+  category:  { bg: 'var(--accent-bg)', color: 'var(--accent)',     border: 'none' },
+  extension: { bg: 'transparent',       color: 'var(--text-muted)', border: '1px solid var(--border)' },
+  keyword:   { bg: 'transparent',       color: 'var(--text-muted)', border: '1px solid var(--border)' },
+  size:      { bg: 'transparent',       color: 'var(--text-muted)', border: '1px solid var(--border)' },
+  regex:     { bg: 'transparent',       color: 'var(--text-muted)', border: '1px solid var(--border)' },
+  dateGroup: { bg: 'var(--accent-bg)', color: 'var(--accent)',     border: 'none' },
+  dateRange: { bg: 'transparent',       color: 'var(--text-muted)', border: '1px solid var(--border)' },
 };
 
 function describeCondition({ type, condition }) {
@@ -161,7 +93,7 @@ function RuleRow({ rule, onEdit, onDelete, onToggle }) {
       </button>
 
       <span style={{ fontSize: '11px', padding: '2px 7px', borderRadius: '4px', fontWeight: 500,
-        flexShrink: 0, background: badge.bg, color: badge.color }}>
+        flexShrink: 0, background: badge.bg, color: badge.color, border: badge.border }}>
         {rule.type}
       </span>
 
@@ -199,51 +131,10 @@ function RuleRow({ rule, onEdit, onDelete, onToggle }) {
   );
 }
 
-// ─── Presets panel ────────────────────────────────────────────────────────
-
-function PresetsPanel({ onApply, onClose }) {
-  return (
-    <div style={{ marginTop: '8px', border: '1px solid var(--border)', borderRadius: '6px',
-      background: 'var(--bg-card)', overflow: 'hidden' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-        padding: '8px 12px', borderBottom: '1px solid var(--separator)',
-        background: 'var(--bg)' }}>
-        <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)',
-          textTransform: 'uppercase', letterSpacing: '0.04em' }}>Presets</span>
-        <button onClick={onClose}
-          style={{ fontSize: '12px', color: 'var(--text-subtle)', background: 'none', border: 'none', cursor: 'pointer' }}>
-          Done
-        </button>
-      </div>
-      {PRESETS.map((preset, i) => (
-        <button key={preset.id}
-          onClick={() => { onApply(preset); onClose(); }}
-          style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-            padding: '10px 12px', textAlign: 'left', background: 'none', border: 'none',
-            borderTop: i > 0 ? '1px solid var(--separator)' : 'none',
-            cursor: 'pointer', gap: '8px' }}
-          onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-hover)'}
-          onMouseLeave={e => e.currentTarget.style.background = 'none'}
-        >
-          <div>
-            <div style={{ fontSize: '13px', fontWeight: 500, color: 'var(--text)' }}>{preset.name}</div>
-            <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>{preset.description}</div>
-          </div>
-          <span style={{ fontSize: '11px', padding: '2px 8px', borderRadius: '4px', flexShrink: 0,
-            background: 'var(--bg-input)', color: 'var(--text-subtle)' }}>
-            {preset.buildRules().length} rules
-          </span>
-        </button>
-      ))}
-    </div>
-  );
-}
-
 // ─── Main component ───────────────────────────────────────────────────────
 
 export function RulesEditor({ rules, onAdd, onUpdate, onDelete, onReorder, onToggle, loading }) {
   const [formOpen, setFormOpen] = useState(false);
-  const [presetsOpen, setPresetsOpen] = useState(false);
   const [editingRule, setEditingRule] = useState(null);
 
   const sensors = useSensors(
@@ -264,10 +155,6 @@ export function RulesEditor({ rules, onAdd, onUpdate, onDelete, onReorder, onTog
     setEditingRule(null);
   };
 
-  const handleApplyPreset = (preset) => {
-    preset.buildRules().forEach(r => onAdd({ ...r, enabled: true }));
-  };
-
   return (
     <div>
       {/* Header row */}
@@ -275,18 +162,6 @@ export function RulesEditor({ rules, onAdd, onUpdate, onDelete, onReorder, onTog
         <span style={{ flex: 1, fontSize: '12px', color: 'var(--text-subtle)' }}>
           {rules.length > 0 ? `${rules.length} rule${rules.length !== 1 ? 's' : ''} — first match wins` : 'No rules yet'}
         </span>
-
-        <button
-          onClick={() => setPresetsOpen(o => !o)}
-          style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '5px 10px',
-            fontSize: '12px', borderRadius: '6px', border: '1px solid var(--border)',
-            background: 'var(--bg-input)', color: 'var(--text-muted)', cursor: 'pointer' }}
-          onMouseEnter={e => e.currentTarget.style.color = 'var(--text)'}
-          onMouseLeave={e => e.currentTarget.style.color = 'var(--text-muted)'}
-        >
-          Presets
-          <ChevronDown size={12} style={{ transform: presetsOpen ? 'rotate(180deg)' : '', transition: 'transform 0.15s' }} />
-        </button>
 
         <button
           onClick={() => { setEditingRule(null); setFormOpen(true); }}
@@ -301,16 +176,11 @@ export function RulesEditor({ rules, onAdd, onUpdate, onDelete, onReorder, onTog
         </button>
       </div>
 
-      {/* Presets panel */}
-      {presetsOpen && (
-        <PresetsPanel onApply={handleApplyPreset} onClose={() => setPresetsOpen(false)} />
-      )}
-
       {/* Empty state */}
-      {!loading && rules.length === 0 && !presetsOpen && (
+      {!loading && rules.length === 0 && (
         <div style={{ padding: '20px', textAlign: 'center', border: '1px dashed var(--border)',
           borderRadius: '6px', color: 'var(--text-subtle)', fontSize: '12px' }}>
-          No rules. Use Presets to get started quickly, or add a custom rule.
+          No rules yet. Use Smart Cleanup above, or add a custom rule.
         </div>
       )}
 

@@ -1,10 +1,11 @@
 {
-  "name": "stow",
+  "name": "@h8ntome/stow",
   "version": "1.0.0",
   "description": "A smart local file organiser — sort files into folders using rules you define.",
   "type": "module",
   "bin": {
-    "stow": "./bin/stow.js"
+    "stow":  "./bin/stow.js",
+    "stow.": "./bin/stow-dot.js"
   },
   "main": "./src/core/config.js",
   "files": [
@@ -45,6 +46,15 @@
     "tailwindcss": "^4.0.0",
     "vite": "^5.1.4"
   },
-  "keywords": ["file", "organiser", "organizer", "cli", "sort", "files"],
-  "license": "MIT"
+  "keywords": ["file", "organiser", "organizer", "cli", "sort", "files", "cleanup", "folder", "smart"],
+  "license": "MIT",
+  "author": "H8notme",
+  "homepage": "https://github.com/h8ntome/Stow#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/h8ntome/Stow.git"
+  },
+  "bugs": {
+    "url": "https://github.com/h8ntome/Stow/issues"
+  }
 }

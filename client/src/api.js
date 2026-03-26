@@ -40,13 +40,19 @@ export const reorderRules = (orderedIds) =>
   request(`${BASE}/rules/reorder`, { method: 'PUT', body: JSON.stringify({ orderedIds }) });
 
 // ---------------------------------------------------------------------------
-// Filesystem browser
+// Filesystem
 // ---------------------------------------------------------------------------
-export const browseFolder = (folderPath) =>
-  request(`${BASE}/fs/browse?path=${encodeURIComponent(folderPath)}`);
+export const validateFolder = (folderPath) =>
+  request(`${BASE}/fs/validate?path=${encodeURIComponent(folderPath)}`);
 
-export const browseHome = () =>
-  request(`${BASE}/fs/browse`);
+export const getHome = () =>
+  request(`${BASE}/fs/validate`);
+
+export const pickFolder = () =>
+  request(`${BASE}/fs/pick`);
+
+export const getPlatform = () =>
+  request(`${BASE}/platform`);
 
 // ---------------------------------------------------------------------------
 // Files

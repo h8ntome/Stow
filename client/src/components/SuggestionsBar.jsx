@@ -10,7 +10,7 @@ export function SuggestionsBar({ suggestions, total, onAddOne, onAddAll, onDismi
   if (!suggestions || suggestions.length === 0) return null;
 
   return (
-    <div style={{ borderRadius: '8px', border: '1px solid var(--border)', padding: '12px',
+    <div style={{ borderRadius: '8px', padding: '12px',
       background: 'var(--accent-bg)', display: 'flex', flexDirection: 'column', gap: '10px' }}>
 
       {/* Header */}

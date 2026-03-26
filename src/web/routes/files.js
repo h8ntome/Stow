@@ -8,8 +8,12 @@ import multer from 'multer';
 import path from 'path';
 import os from 'os';
 import fs from 'fs';
+import { execFile } from 'child_process';
+import { promisify } from 'util';
 import { scanFolder } from '../../core/scanner.js';
 import { CATEGORY_EXTENSIONS } from '../../core/rules-engine.js';
+
+const execFileAsync = promisify(execFile);
 
 const router = Router();
 
@@ -41,6 +45,56 @@ router.get('/scan', (req, res) => {
     res.json(scanFolder(resolved));
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// GET /api/fs/validate?path=... — check if a path is a usable folder
+// Returns: { valid: bool, error?: string, home: string }
+// ---------------------------------------------------------------------------
+router.get('/fs/validate', (req, res) => {
+  const home = os.homedir();
+  if (!req.query.path) {
+    return res.json({ valid: false, error: 'No path provided.', home });
+  }
+  const resolved = path.resolve(req.query.path);
+  if (!fs.existsSync(resolved)) {
+    return res.json({ valid: false, error: `Path does not exist: ${resolved}`, home });
+  }
+  if (!fs.statSync(resolved).isDirectory()) {
+    return res.json({ valid: false, error: 'This is a file, not a folder.', home });
+  }
+  try {
+    fs.accessSync(resolved, fs.constants.R_OK | fs.constants.W_OK);
+  } catch {
+    return res.json({ valid: false, error: 'No read/write permission for this folder.', home });
+  }
+  return res.json({ valid: true, home });
+});
+
+// ---------------------------------------------------------------------------
+// GET /api/platform — return the server OS platform
+// ---------------------------------------------------------------------------
+router.get('/platform', (_req, res) => {
+  res.json({ platform: process.platform });
+});
+
+// ---------------------------------------------------------------------------
+// GET /api/fs/pick — trigger native OS folder picker (macOS only via osascript)
+// Returns: { native: true, path: string } | { native: true, cancelled: true } | { native: false }
+// ---------------------------------------------------------------------------
+router.get('/fs/pick', async (_req, res) => {
+  if (process.platform !== 'darwin') {
+    return res.json({ native: false });
+  }
+  try {
+    const { stdout } = await execFileAsync('osascript', ['-e', 'POSIX path of (choose folder)']);
+    const picked = stdout.trim().replace(/\/$/, '');
+    return res.json({ native: true, path: picked });
+  } catch (err) {
+    // Exit code 1 = user pressed Cancel in the dialog
+    if (err.code === 1) return res.json({ native: true, cancelled: true });
+    return res.status(500).json({ error: err.message });
   }
 });
 

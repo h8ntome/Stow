@@ -1,42 +1,18 @@
 /**
  * App.jsx
- * Root component. Three-column layout: sidebar | main | preview.
- * Manages theme, step state, folder paths, suggestions, Smart Sort.
+ * Root component. Single-column layout with Smart Cleanup as the hero action.
  */
 
 import { useState, useCallback, useEffect, useRef } from 'react';
-import { Layers, Zap, CheckCircle } from 'lucide-react';
+import { Layers, Sparkles, MoveRight, ChevronDown, ChevronRight } from 'lucide-react';
 import { ThemeToggle } from './components/ThemeToggle.jsx';
-import { StepSidebar } from './components/StepSidebar.jsx';
-import { FolderInput } from './components/FolderInput.jsx';
-import { DestinationInput } from './components/DestinationInput.jsx';
-import { RulesEditor } from './components/RulesEditor.jsx';
+import { FolderPicker } from './components/FolderPicker.jsx';
+import { RulesEditor, SMART_CLEANUP_RULES } from './components/RulesEditor.jsx';
 import { PreviewPanel } from './components/PreviewPanel.jsx';
 import { SuggestionsBar } from './components/SuggestionsBar.jsx';
 import { useRules } from './hooks/useRules.js';
 import { useOrganize } from './hooks/useOrganize.js';
-import { uploadFiles, suggestRules, getConfig } from './api.js';
-
-// ─── Shared style atoms ───────────────────────────────────────────────────
-
-const card = {
-  background: 'var(--bg-card)',
-  border: '1px solid var(--border)',
-  borderRadius: '8px',
-  padding: '16px',
-};
-
-const sectionLabel = {
-  fontSize: '11px',
-  fontWeight: 600,
-  letterSpacing: '0.04em',
-  textTransform: 'uppercase',
-  color: 'var(--text-subtle)',
-  marginBottom: '12px',
-  display: 'block',
-};
-
-// ─────────────────────────────────────────────────────────────────────────
+import { suggestRules, getConfig } from './api.js';
 
 export default function App() {
 
@@ -47,6 +23,10 @@ export default function App() {
     document.documentElement.classList.toggle('dark', theme === 'dark');
     localStorage.setItem('stow-theme', theme);
   }, [theme]);
+
+  // ── Platform ───────────────────────────────────────────────────────────
+  // Use navigator.platform for instant init; server and client are on same machine
+  const [isMac] = useState(() => /Mac/i.test(navigator.platform));
 
   // ── Paths ──────────────────────────────────────────────────────────────
   const [sourcePath, setSourcePath] = useState('');
@@ -59,24 +39,22 @@ export default function App() {
     }).catch(() => {});
   }, []); // eslint-disable-line
 
-  // ── Uploaded files ─────────────────────────────────────────────────────
-  const [droppedFiles, setDroppedFiles] = useState([]);
-  const [uploadedFileData, setUploadedFileData] = useState(null);
-  const [uploading, setUploading] = useState(false);
-
-  // ── Auto-suggestions ────────────────────────────────────────────────────
+  // ── Auto-suggestions & file count ─────────────────────────────────────
   const [suggestions, setSuggestions] = useState(null);
   const [suggestionsDismissed, setSuggestionsDismissed] = useState(false);
+  const [fileCount, setFileCount] = useState(null);
   const suggestTimer = useRef(null);
 
   useEffect(() => {
     setSuggestions(null);
     setSuggestionsDismissed(false);
+    setFileCount(null);
     if (!sourcePath?.trim()) return;
     clearTimeout(suggestTimer.current);
     suggestTimer.current = setTimeout(async () => {
       try {
         const r = await suggestRules(sourcePath.trim());
+        setFileCount(r.total ?? null);
         if (r.suggestions?.length > 0) setSuggestions(r);
       } catch { /* folder might not exist yet */ }
     }, 700);
@@ -84,59 +62,51 @@ export default function App() {
   }, [sourcePath]);
 
   // ── Rules & organise hooks ─────────────────────────────────────────────
-  const { rules, loading: rulesLoading, addRule, updateRule, removeRule, reorderRules, toggleRule } = useRules();
+  const { rules, loading: rulesLoading, addRule, updateRule, removeRule, reorderRules, toggleRule, clearRules } = useRules();
   const { previewResult, applyResult, loading: organizeLoading, error, preview, apply, reset } = useOrganize();
 
-  // ── File upload ────────────────────────────────────────────────────────
-  const handleFilesDropped = useCallback(async (files) => {
-    setDroppedFiles(files);
-    setUploading(true);
-    try {
-      const r = await uploadFiles(files);
-      setUploadedFileData(r.files);
-    } catch { /* silent */ } finally { setUploading(false); }
-  }, []);
-
-  const handleClearDropped = useCallback(() => {
-    setDroppedFiles([]);
-    setUploadedFileData(null);
-    reset();
-  }, [reset]);
+  // ── Rules UI state ─────────────────────────────────────────────────────
+  const [rulesExpanded, setRulesExpanded] = useState(false);
 
   // ── Preview / Apply ────────────────────────────────────────────────────
   const handlePreview = useCallback(async () => {
-    await preview({
-      sourcePath: uploadedFileData ? null : sourcePath,
-      destinationBase: destinationPath,
-      files: uploadedFileData || null,
-    });
-  }, [preview, sourcePath, destinationPath, uploadedFileData]);
+    await preview({ sourcePath, destinationBase: destinationPath });
+  }, [preview, sourcePath, destinationPath]);
 
   const handleApply = useCallback(async () => {
-    await apply({
-      sourcePath: uploadedFileData ? null : sourcePath,
-      destinationBase: destinationPath,
-      files: uploadedFileData ? previewResult?.matched.map(m => m.file) : null,
-    });
+    await apply({ sourcePath, destinationBase: destinationPath });
     localStorage.setItem('stow-first-done', '1');
-  }, [apply, sourcePath, destinationPath, uploadedFileData, previewResult]);
+  }, [apply, sourcePath, destinationPath]);
 
-  // ── Smart Sort ─────────────────────────────────────────────────────────
-  const [smartSorting, setSmartSorting] = useState(false);
+  // ── Auto-preview for `stow.` web mode (?repeat=1) ─────────────────────
+  const repeatPending = useRef(new URLSearchParams(window.location.search).has('repeat'));
 
-  const handleSmartSort = useCallback(async () => {
-    if (!sourcePath || !destinationPath) return;
-    setSmartSorting(true);
+  useEffect(() => {
+    if (!repeatPending.current) return;
+    if (rulesLoading || !sourcePath.trim() || !destinationPath.trim() || rules.length === 0) return;
+    repeatPending.current = false;
+    window.history.replaceState({}, '', window.location.pathname);
+    handlePreview();
+  }, [rulesLoading, sourcePath, destinationPath, rules, handlePreview]);
+
+  // ── Smart Cleanup ──────────────────────────────────────────────────────
+  const [smartCleaning, setSmartCleaning] = useState(false);
+
+  const handleSmartCleanup = useCallback(async () => {
+    if (!sourcePath.trim()) return;
+    setSmartCleaning(true);
     try {
-      const r = await suggestRules(sourcePath.trim());
-      if (!r.suggestions?.length) return;
-      for (const s of r.suggestions) {
-        await addRule({ name: s.ruleName, type: s.type, condition: s.condition, destination: s.destination, enabled: true });
+      await clearRules();
+      for (const r of SMART_CLEANUP_RULES) {
+        await addRule({ ...r, enabled: true });
       }
+      setRulesExpanded(false);
       setSuggestionsDismissed(true);
-      await preview({ sourcePath, destinationBase: destinationPath });
-    } finally { setSmartSorting(false); }
-  }, [sourcePath, destinationPath, addRule, preview]);
+      if (sourcePath.trim() && destinationPath.trim()) {
+        await preview({ sourcePath: sourcePath.trim(), destinationBase: destinationPath.trim() });
+      }
+    } finally { setSmartCleaning(false); }
+  }, [sourcePath, destinationPath, clearRules, addRule, preview]);
 
   // ── Suggestions ────────────────────────────────────────────────────────
   const handleAddOneSuggestion = useCallback((s) => {
@@ -151,28 +121,19 @@ export default function App() {
     setSuggestionsDismissed(true);
   }, [suggestions, addRule]);
 
-  // ── Step logic ─────────────────────────────────────────────────────────
-  const completedSteps = [
-    sourcePath.trim() && 1,
-    rules.length > 0 && 2,
-    destinationPath.trim() && 3,
-    previewResult && 4,
-    applyResult && 5,
-  ].filter(Boolean);
-
-  const canPreview = (sourcePath.trim() || uploadedFileData) && destinationPath.trim() && rules.length > 0;
-  const canSmartSort = (sourcePath.trim() || uploadedFileData) && destinationPath.trim() && rules.length === 0;
+  // ── Derived state ──────────────────────────────────────────────────────
+  const canPreview = sourcePath.trim() && destinationPath.trim() && rules.length > 0;
   const showSuggestions = suggestions && !suggestionsDismissed;
-  const firstDone = !!localStorage.getItem('stow-first-done');
+  const showPreviewSection = !!(previewResult || applyResult || organizeLoading || error);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden',
       background: 'var(--bg)', color: 'var(--text)' }}>
 
-      {/* ── Titlebar ──────────────────────────────────────────────────── */}
-      <header style={{ flexShrink: 0, height: '44px', borderBottom: '1px solid var(--border)',
-        background: 'var(--bg-card)', display: 'flex', alignItems: 'center',
-        padding: '0 16px', gap: '12px' }}>
+      {/* ── Header ──────────────────────────────────────────────────────── */}
+      <header style={{ flexShrink: 0, height: '44px',
+        background: 'var(--bg)', display: 'flex', alignItems: 'center',
+        padding: '0 24px', gap: '12px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
           <Layers size={15} style={{ color: 'var(--accent)' }} />
           <span style={{ fontSize: '13px', fontWeight: 700, letterSpacing: '-0.2px' }}>stow</span>
@@ -183,64 +144,123 @@ export default function App() {
         </div>
       </header>
 
-      {/* ── Three-column body ─────────────────────────────────────────── */}
-      <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
+      {/* ── Body ────────────────────────────────────────────────────────── */}
+      <div style={{ flex: 1, overflowY: 'auto', padding: '24px' }}>
+        <div style={{ maxWidth: '600px', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '28px' }}>
 
-        {/* Sidebar */}
-        <div style={{ width: '200px', flexShrink: 0, borderRight: '1px solid var(--border)',
-          background: 'var(--bg-card)', padding: '16px 8px', overflowY: 'auto' }}>
-          <StepSidebar completedSteps={completedSteps} />
-        </div>
-
-        {/* Main column */}
-        <div style={{ flex: 1, overflowY: 'auto', padding: '16px' }}>
-          <div style={{ maxWidth: '620px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-
-            {/* Welcome / empty state (step 1 not done) */}
-            {!sourcePath.trim() && !uploadedFileData && !firstDone && (
-              <div style={{ ...card, borderStyle: 'dashed', padding: '24px',
-                display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text)' }}>
-                  Welcome to stow
-                </span>
-                <span style={{ fontSize: '12px', color: 'var(--text-muted)', lineHeight: 1.6 }}>
-                  Pick a source folder below, then set rules for how files should be sorted.
-                  stow will preview every move before touching anything.
-                </span>
-                <div style={{ marginTop: '8px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                  {['1. Pick your source folder', '2. Choose a preset or add rules', '3. Set your destination folder', '4. Preview — then apply'].map((step, i) => (
-                    <span key={i} style={{ fontSize: '12px', color: 'var(--text-subtle)' }}>{step}</span>
-                  ))}
+          {/* Smart Cleanup */}
+          <div>
+            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '16px' }}>
+              <div style={{ flex: 1 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '7px', marginBottom: '4px' }}>
+                  <Sparkles size={14} style={{ color: 'var(--accent)' }} />
+                  <span style={{ fontSize: '14px', fontWeight: 600 }}>Smart Cleanup</span>
                 </div>
+                <p style={{ fontSize: '12px', color: 'var(--text-muted)', lineHeight: 1.5, margin: 0 }}>
+                  Sorts files into Screenshots, Images, Videos, Audio, Documents, Code, Archives, Design — leaves everything else untouched.
+                </p>
+                {!sourcePath.trim() && (
+                  <p style={{ fontSize: '11px', color: 'var(--text-subtle)', margin: '5px 0 0' }}>
+                    Set source and destination folders below, then click Smart Cleanup.
+                  </p>
+                )}
+                {sourcePath.trim() && !destinationPath.trim() && (
+                  <p style={{ fontSize: '11px', color: 'var(--text-subtle)', margin: '5px 0 0' }}>
+                    Set a destination folder, then click Smart Cleanup to preview.
+                  </p>
+                )}
               </div>
-            )}
+              <button
+                onClick={handleSmartCleanup}
+                disabled={!sourcePath.trim() || smartCleaning || organizeLoading}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: '7px',
+                  padding: '9px 18px', fontSize: '13px', fontWeight: 500,
+                  borderRadius: '8px', border: 'none', flexShrink: 0,
+                  background: sourcePath.trim() ? 'var(--accent)' : 'var(--bg-input)',
+                  color: sourcePath.trim() ? 'white' : 'var(--text-muted)',
+                  cursor: (!sourcePath.trim() || smartCleaning || organizeLoading) ? 'not-allowed' : 'pointer',
+                  opacity: (!sourcePath.trim() || smartCleaning || organizeLoading) ? 0.6 : 1,
+                }}
+                onMouseEnter={e => { if (sourcePath.trim() && !smartCleaning) e.currentTarget.style.background = 'var(--accent-hover)'; }}
+                onMouseLeave={e => { e.currentTarget.style.background = sourcePath.trim() ? 'var(--accent)' : 'var(--bg-input)'; }}
+              >
+                <Sparkles size={13} />
+                {smartCleaning ? 'Applying…' : 'Smart Cleanup'}
+              </button>
+            </div>
+          </div>
 
-            {/* Source folder */}
-            <div style={card}>
-              <span style={sectionLabel}>Source</span>
-              <FolderInput
+          {/* Source + Destination */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <div style={{ flex: 1 }}>
+              <span style={{ fontSize: '11px', fontWeight: 600, letterSpacing: '0.04em',
+                textTransform: 'uppercase', color: 'var(--text-subtle)', display: 'block', marginBottom: '8px' }}>
+                Source
+              </span>
+              <FolderPicker
                 value={sourcePath}
                 onChange={setSourcePath}
-                onFilesDropped={handleFilesDropped}
-                droppedFiles={droppedFiles}
-                onClearDropped={handleClearDropped}
+                isMac={isMac}
+                placeholder="/Users/you/Downloads"
               />
+              {fileCount !== null && (
+                <p style={{ fontSize: '11px', color: 'var(--text-subtle)', margin: '5px 0 0' }}>
+                  {fileCount} file{fileCount !== 1 ? 's' : ''} in folder
+                </p>
+              )}
             </div>
 
-            {/* Suggestions bar */}
-            {showSuggestions && (
-              <SuggestionsBar
-                suggestions={suggestions.suggestions}
-                total={suggestions.total}
-                onAddOne={handleAddOneSuggestion}
-                onAddAll={handleAddAllSuggestions}
-                onDismiss={() => setSuggestionsDismissed(true)}
-              />
-            )}
+            <MoveRight size={16} style={{ color: 'var(--text-subtle)', flexShrink: 0, marginTop: '20px' }} />
 
-            {/* Rules */}
-            <div style={card}>
-              <span style={sectionLabel}>Rules</span>
+            <div style={{ flex: 1 }}>
+              <span style={{ fontSize: '11px', fontWeight: 600, letterSpacing: '0.04em',
+                textTransform: 'uppercase', color: 'var(--text-subtle)', display: 'block', marginBottom: '8px' }}>
+                Destination
+              </span>
+              <FolderPicker
+                value={destinationPath}
+                onChange={setDestinationPath}
+                isMac={isMac}
+                placeholder="/Users/you/Organised"
+              />
+              <p style={{ fontSize: '11px', color: 'var(--text-subtle)', margin: '5px 0 0' }}>
+                Subfolders will be created here.
+              </p>
+            </div>
+          </div>
+
+          {/* Suggestions */}
+          {showSuggestions && (
+            <SuggestionsBar
+              suggestions={suggestions.suggestions}
+              total={suggestions.total}
+              onAddOne={handleAddOneSuggestion}
+              onAddAll={handleAddAllSuggestions}
+              onDismiss={() => setSuggestionsDismissed(true)}
+            />
+          )}
+
+          {/* Rules */}
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: rulesExpanded ? '12px' : '0' }}>
+              <span style={{ flex: 1, fontSize: '12px', color: 'var(--text-muted)' }}>
+                {rules.length > 0
+                  ? `${rules.length} rule${rules.length !== 1 ? 's' : ''} active`
+                  : 'No rules — use Smart Cleanup above or add a custom rule'}
+              </span>
+              <button
+                onClick={() => setRulesExpanded(e => !e)}
+                style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '4px 0',
+                  fontSize: '12px', color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer' }}
+              >
+                {rulesExpanded
+                  ? <><ChevronDown size={13} />Hide rules</>
+                  : <><ChevronRight size={13} />Add custom rule</>
+                }
+              </button>
+            </div>
+            {rulesExpanded && (
               <RulesEditor
                 rules={rules}
                 loading={rulesLoading}
@@ -250,77 +270,51 @@ export default function App() {
                 onReorder={reorderRules}
                 onToggle={toggleRule}
               />
-            </div>
-
-            {/* Destination */}
-            <div style={card}>
-              <span style={sectionLabel}>Destination</span>
-              <DestinationInput value={destinationPath} onChange={setDestinationPath} />
-            </div>
-
-            {/* Action buttons */}
-            <div style={{ display: 'flex', gap: '8px' }}>
-              {canSmartSort && (
-                <button
-                  onClick={handleSmartSort}
-                  disabled={smartSorting || organizeLoading}
-                  style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '7px 14px',
-                    fontSize: '13px', fontWeight: 500, borderRadius: '6px',
-                    background: 'var(--accent)', color: 'white', border: 'none',
-                    cursor: smartSorting ? 'wait' : 'pointer',
-                    opacity: smartSorting ? 0.7 : 1 }}
-                  onMouseEnter={e => { if (!smartSorting) e.currentTarget.style.background = 'var(--accent-hover)'; }}
-                  onMouseLeave={e => { e.currentTarget.style.background = 'var(--accent)'; }}
-                >
-                  <Zap size={14} />
-                  {smartSorting ? 'Analysing…' : 'Smart Sort'}
-                </button>
-              )}
-
-              <button
-                onClick={handlePreview}
-                disabled={!canPreview || organizeLoading || uploading}
-                style={{ padding: '7px 14px', fontSize: '13px', fontWeight: 500, borderRadius: '6px',
-                  background: canPreview ? 'var(--accent)' : 'var(--bg-input)',
-                  color: canPreview ? 'white' : 'var(--text-muted)',
-                  border: canPreview ? 'none' : '1px solid var(--border)',
-                  cursor: !canPreview ? 'not-allowed' : 'pointer',
-                  opacity: (!canPreview || organizeLoading || uploading) ? 0.5 : 1 }}
-                onMouseEnter={e => { if (canPreview) e.currentTarget.style.background = 'var(--accent-hover)'; }}
-                onMouseLeave={e => { e.currentTarget.style.background = canPreview ? 'var(--accent)' : 'var(--bg-input)'; }}
-              >
-                {uploading ? 'Uploading…' : 'Preview'}
-              </button>
-
-              {!canPreview && !canSmartSort && (
-                <span style={{ fontSize: '12px', color: 'var(--text-subtle)', alignSelf: 'center', marginLeft: '4px' }}>
-                  {!sourcePath && !uploadedFileData && 'Select a source. '}
-                  {sourcePath && rules.length === 0 && 'Add rules or use Smart Sort. '}
-                  {sourcePath && rules.length > 0 && !destinationPath && 'Set a destination.'}
-                </span>
-              )}
-            </div>
-
+            )}
           </div>
-        </div>
 
-        {/* Preview column */}
-        <div style={{ width: '320px', flexShrink: 0, borderLeft: '1px solid var(--border)',
-          overflowY: 'auto', background: 'var(--bg-card)' }}>
-          <div style={{ padding: '16px' }}>
-            <span style={{ ...sectionLabel }}>Preview</span>
-            <PreviewPanel
-              previewResult={previewResult}
-              applyResult={applyResult}
-              loading={organizeLoading || uploading}
-              error={error}
-              destinationBase={destinationPath}
-              onApply={handleApply}
-              onReset={() => { reset(); handleClearDropped(); setSuggestions(null); }}
-            />
+          {/* Preview button */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <button
+              onClick={handlePreview}
+              disabled={!canPreview || organizeLoading}
+              style={{
+                padding: '8px 20px', fontSize: '13px', fontWeight: 500, borderRadius: '8px', border: 'none',
+                background: canPreview ? 'var(--accent)' : 'var(--bg-input)',
+                color: canPreview ? 'white' : 'var(--text-muted)',
+                cursor: !canPreview ? 'not-allowed' : 'pointer',
+                opacity: (!canPreview || organizeLoading) ? 0.5 : 1,
+              }}
+              onMouseEnter={e => { if (canPreview) e.currentTarget.style.background = 'var(--accent-hover)'; }}
+              onMouseLeave={e => { e.currentTarget.style.background = canPreview ? 'var(--accent)' : 'var(--bg-input)'; }}
+            >
+              Preview
+            </button>
+            {!canPreview && (
+              <span style={{ fontSize: '12px', color: 'var(--text-subtle)' }}>
+                {!sourcePath.trim() && 'Select a source folder. '}
+                {sourcePath.trim() && rules.length === 0 && 'Use Smart Cleanup above or add rules. '}
+                {sourcePath.trim() && rules.length > 0 && !destinationPath.trim() && 'Set a destination folder.'}
+              </span>
+            )}
           </div>
-        </div>
 
+          {/* Preview results (inline) */}
+          {showPreviewSection && (
+            <div>
+              <PreviewPanel
+                previewResult={previewResult}
+                applyResult={applyResult}
+                loading={organizeLoading}
+                error={error}
+                destinationBase={destinationPath}
+                onApply={handleApply}
+                onReset={() => { reset(); setSuggestions(null); setSuggestionsDismissed(false); }}
+              />
+            </div>
+          )}
+
+        </div>
       </div>
     </div>
   );

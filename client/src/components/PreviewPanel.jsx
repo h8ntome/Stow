@@ -27,7 +27,7 @@ function ApplyResult({ result, onReset }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '12px',
-        borderRadius: '8px', background: 'var(--accent-bg)', border: '1px solid var(--border)' }}>
+        borderRadius: '8px', background: 'var(--accent-bg)' }}>
         <CheckCircle2 size={18} style={{ color: 'var(--success)', flexShrink: 0 }} />
         <div>
           <p style={{ fontSize: '13px', fontWeight: 500, color: 'var(--text)' }}>
@@ -54,7 +54,7 @@ function ApplyResult({ result, onReset }) {
 
       <button onClick={onReset}
         style={{ width: '100%', padding: '7px', fontSize: '12px', borderRadius: '6px', cursor: 'pointer',
-          background: 'var(--bg-input)', border: '1px solid var(--border)', color: 'var(--text-muted)' }}
+          background: 'var(--bg-input)', border: 'none', color: 'var(--text-muted)' }}
         onMouseEnter={e => e.currentTarget.style.color = 'var(--text)'}
         onMouseLeave={e => e.currentTarget.style.color = 'var(--text-muted)'}>
         Organise more files
@@ -81,7 +81,7 @@ export function PreviewPanel({ previewResult, applyResult, loading, error, desti
   if (error) {
     return (
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', padding: '12px',
-        borderRadius: '8px', background: 'var(--bg-input)', border: '1px solid var(--border)' }}>
+        borderRadius: '8px', background: 'var(--bg-input)' }}>
         <AlertTriangle size={15} style={{ color: 'var(--danger)', flexShrink: 0, marginTop: '1px' }} />
         <p style={{ fontSize: '12px', color: 'var(--danger)' }}>{error}</p>
       </div>
@@ -113,7 +113,7 @@ export function PreviewPanel({ previewResult, applyResult, loading, error, desti
 
       {/* Matched files table */}
       {matched.length > 0 ? (
-        <div style={{ borderRadius: '6px', border: '1px solid var(--border)', overflow: 'hidden' }}>
+        <div style={{ borderRadius: '6px', overflow: 'hidden' }}>
           <table style={{ width: '100%', fontSize: '11px', borderCollapse: 'collapse' }}>
             <thead>
               <tr style={{ background: 'var(--bg)' }}>
@@ -128,7 +128,7 @@ export function PreviewPanel({ previewResult, applyResult, loading, error, desti
                 const parts = destRelative.replace(/\\/g, '/').split('/');
                 const destDir = parts.slice(0, -1).join('/');
                 return (
-                  <tr key={i} style={{ borderTop: '1px solid var(--border)' }}
+                  <tr key={i} style={{ borderTop: i === 0 ? 'none' : '1px solid var(--border)' }}
                     onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-hover)'}
                     onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
                     <td style={{ padding: '6px 10px' }}>
@@ -159,7 +159,7 @@ export function PreviewPanel({ previewResult, applyResult, loading, error, desti
         </div>
       ) : (
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '12px', borderRadius: '6px',
-          background: 'var(--bg-input)', border: '1px solid var(--border)',
+          background: 'var(--bg-input)',
           fontSize: '12px', color: 'var(--text-muted)' }}>
           <AlertTriangle size={14} style={{ flexShrink: 0 }} />
           No files matched any rule.
@@ -168,7 +168,7 @@ export function PreviewPanel({ previewResult, applyResult, loading, error, desti
 
       {/* Unmatched — collapsible */}
       {unmatched.length > 0 && (
-        <div style={{ borderRadius: '6px', border: '1px solid var(--border)', overflow: 'hidden' }}>
+        <div style={{ borderRadius: '6px', overflow: 'hidden' }}>
           <button onClick={() => setUnmatchedOpen(o => !o)}
             style={{ width: '100%', display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 10px',
               fontSize: '11px', color: 'var(--text-muted)', background: 'none', border: 'none',
@@ -179,7 +179,7 @@ export function PreviewPanel({ previewResult, applyResult, loading, error, desti
             {unmatched.length} file{unmatched.length !== 1 ? 's' : ''} with no matching rule
           </button>
           {unmatchedOpen && (
-            <div style={{ borderTop: '1px solid var(--border)' }}>
+            <div>
               {unmatched.map((file, i) => (
                 <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 10px',
                   fontSize: '11px', borderTop: i > 0 ? '1px solid var(--border)' : 'none' }}>

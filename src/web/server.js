@@ -46,8 +46,9 @@ function createApp() {
 
 /**
  * Starts the Express server and opens the browser.
+ * @param {{ openUrl?: string }} [opts]
  */
-export async function start() {
+export async function start({ openUrl } = {}) {
   const port = parseInt(process.env.STOW_PORT || '3000', 10);
   const app = createApp();
   const server = createServer(app);
@@ -65,12 +66,29 @@ export async function start() {
   });
 
   server.listen(port, '127.0.0.1', async () => {
-    const url = `http://localhost:${port}`;
-    console.log(`\n  stow is running at ${url}\n`);
+    const url = openUrl || `http://localhost:${port}`;
+    console.log(`\n  stow is running at http://localhost:${port}\n`);
     try {
       await open(url);
     } catch {
-      console.log(`  Could not open browser automatically. Visit ${url} manually.\n`);
+      console.log(`  Could not open browser automatically. Visit http://localhost:${port} manually.\n`);
     }
   });
+}
+
+/**
+ * Starts the web server for `stow.` — pre-loads the last run's config
+ * and opens the browser with ?repeat=1 so the app auto-triggers preview.
+ * @param {object} last - The last-run record from ~/.stow/last.json
+ */
+export async function startRepeat(last) {
+  const { loadConfig, saveConfig } = await import('../core/config.js');
+  const config = await loadConfig();
+  config.lastSource      = last.sourcePath;
+  config.lastDestination = last.destinationPath;
+  config.rules           = last.rules;
+  await saveConfig(config);
+
+  const port = parseInt(process.env.STOW_PORT || '3000', 10);
+  await start({ openUrl: `http://localhost:${port}?repeat=1` });
 }

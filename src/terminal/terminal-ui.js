@@ -9,6 +9,7 @@ import chalk from 'chalk';
 import fs from 'fs';
 import path from 'path';
 import { loadConfig, saveConfig } from '../core/config.js';
+import { saveLast } from '../core/last.js';
 import { scanFolder } from '../core/scanner.js';
 import { evaluate, describeRule, CATEGORY_EXTENSIONS } from '../core/rules-engine.js';
 import { moveFile, previewMove } from '../core/mover.js';
@@ -335,14 +336,115 @@ export async function run() {
 
   applySpinner.stop('Done.');
 
-  // 8. Save config
+  // 8. Save config + last-run record
   config.rules = rules;
   config.lastSource = resolvedSource;
   config.lastDestination = resolvedDest;
   await saveConfig(config);
+  await saveLast({ sourcePath: resolvedSource, destinationPath: resolvedDest, rules, filesMoved: moved.length });
 
   // 9. Summary
   formatSummary({ moved, failed });
 
   p.outro(chalk.green('All done. Config saved to ~/.stow/config.json'));
+}
+
+// ---------------------------------------------------------------------------
+// Repeat last cleanup — called by `stow.` in terminal mode
+// ---------------------------------------------------------------------------
+
+export async function runRepeat(last) {
+  const { sourcePath, destinationPath, rules } = last;
+  const resolvedSource = path.resolve(sourcePath);
+  const resolvedDest   = path.resolve(destinationPath);
+
+  p.intro(chalk.bold.white(' stow. — repeating last cleanup '));
+
+  // Validate paths still exist
+  if (!fs.existsSync(resolvedSource)) {
+    p.cancel(chalk.red(`Source folder no longer exists: ${resolvedSource}`));
+    process.exit(1);
+  }
+
+  // Scan
+  const scanSpinner = p.spinner();
+  scanSpinner.start('Scanning source folder…');
+
+  let scanResult;
+  try {
+    scanResult = scanFolder(resolvedSource, resolvedDest);
+    scanSpinner.stop(`Found ${scanResult.files.length} file(s).`);
+  } catch (err) {
+    scanSpinner.stop(chalk.red('Scan failed.'));
+    p.cancel(err.message);
+    process.exit(1);
+  }
+
+  if (scanResult.errors.length > 0) {
+    p.note(
+      scanResult.errors.map(e => `${e.path}: ${e.error}`).join('\n'),
+      chalk.yellow(`${scanResult.errors.length} folder(s) could not be read`)
+    );
+  }
+
+  // Evaluate rules
+  const previewResult = evaluate(scanResult.files, rules, resolvedDest);
+
+  // Partition: skip files whose destination already exists
+  const toMove  = [];
+  const skipped = [];
+
+  for (const item of previewResult.matched) {
+    if (fs.existsSync(item.destPath)) {
+      skipped.push(item);
+    } else {
+      toMove.push({ ...item, conflict: false });
+    }
+  }
+
+  // Show preview of what will move
+  formatPreview({ matched: toMove, unmatched: previewResult.unmatched }, resolvedDest);
+
+  // Warn about skipped files
+  if (skipped.length > 0) {
+    p.note(
+      skipped.map(s => `${path.basename(s.file.path)}  →  ${path.relative(resolvedDest, s.destPath)}`).join('\n'),
+      chalk.yellow(`${skipped.length} file(s) skipped — already exist at destination`)
+    );
+  }
+
+  if (toMove.length === 0) {
+    p.outro(chalk.dim('No files to move.'));
+    return;
+  }
+
+  // Apply
+  const applySpinner = p.spinner();
+  applySpinner.start('Moving files…');
+
+  const moved  = [];
+  const failed = [];
+
+  for (const { file, destPath } of toMove) {
+    // Re-check just before moving to catch same-dest collisions within this batch
+    if (fs.existsSync(destPath)) {
+      skipped.push({ file, destPath });
+      continue;
+    }
+    try {
+      const actualDest = await moveFile(file.path, destPath);
+      moved.push({ from: file.path, to: actualDest });
+    } catch (err) {
+      failed.push({ from: file.path, error: err.message });
+    }
+  }
+
+  applySpinner.stop('Done.');
+
+  // Update last.json with new stats
+  await saveLast({ sourcePath: resolvedSource, destinationPath: resolvedDest, rules, filesMoved: moved.length });
+
+  formatSummary({ moved, failed });
+
+  p.outro(chalk.green(`Done. ${moved.length} file(s) moved.`));
 }

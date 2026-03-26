@@ -57,5 +57,13 @@ export function useRules() {
     await updateRule(id, { enabled: !rule.enabled });
   }, [rules, updateRule]);
 
-  return { rules, loading, error, addRule, updateRule, removeRule, reorderRules, toggleRule, refresh: fetchRules };
+  const clearRules = useCallback(async () => {
+    const current = rules;
+    for (const rule of current) {
+      await api.deleteRule(rule.id);
+    }
+    setRules([]);
+  }, [rules]);
+
+  return { rules, loading, error, addRule, updateRule, removeRule, reorderRules, toggleRule, clearRules, refresh: fetchRules };
 }
